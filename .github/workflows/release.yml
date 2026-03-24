@@ -10,14 +10,10 @@ permissions:
 
 jobs:
   build-and-release:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
 
       - run: bun install --frozen-lockfile
 
@@ -46,16 +42,18 @@ jobs:
 
       - name: Update Homebrew formula
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           TAG=${GITHUB_REF#refs/tags/}
           VERSION=${TAG#v}
 
-          SHA_DARWIN_ARM64=$(sha256sum bmm-${TAG}-darwin-arm64.tar.gz | cut -d' ' -f1)
-          SHA_DARWIN_AMD64=$(sha256sum bmm-${TAG}-darwin-amd64.tar.gz | cut -d' ' -f1)
-          SHA_LINUX_AMD64=$(sha256sum bmm-${TAG}-linux-amd64.tar.gz | cut -d' ' -f1)
+          SHA_DARWIN_ARM64=$(shasum -a 256 bmm-${TAG}-darwin-arm64.tar.gz | cut -d' ' -f1)
+          SHA_DARWIN_AMD64=$(shasum -a 256 bmm-${TAG}-darwin-amd64.tar.gz | cut -d' ' -f1)
+          SHA_LINUX_AMD64=$(shasum -a 256 bmm-${TAG}-linux-amd64.tar.gz | cut -d' ' -f1)
 
-          FORMULA_CONTENT=$(cat << RUBY
+          git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/silee-tools/homebrew-tap.git homebrew-tap
+
+          cat > homebrew-tap/Formula/bmm.rb << EOF
           class Bmm < Formula
             desc "A thin CLI wrapper around beautiful-mermaid for rendering Mermaid diagrams"
             homepage "https://github.com/silee-tools/beautiful-mermaid-cli"
@@ -88,25 +86,13 @@ jobs:
               assert_match "bmm", shell_output("#{bin}/bmm --help")
             end
           end
-          RUBY
-          )
+          EOF
 
-          # Strip leading whitespace from heredoc
-          FORMULA_CONTENT=$(echo "$FORMULA_CONTENT" | sed 's/^          //')
+          sed -i '' 's/^          //' homebrew-tap/Formula/bmm.rb
 
-          # Get existing file SHA (if exists) for update
-          EXISTING_SHA=$(gh api repos/silee-tools/homebrew-tap/contents/Formula/bmm.rb --jq '.sha' 2>/dev/null || echo "")
-
-          # Base64 encode content
-          ENCODED=$(echo "$FORMULA_CONTENT" | base64 -w 0)
-
-          if [ -n "$EXISTING_SHA" ]; then
-            gh api --method PUT repos/silee-tools/homebrew-tap/contents/Formula/bmm.rb \
-              -f message="bmm: update to ${TAG}" \
-              -f content="$ENCODED" \
-              -f sha="$EXISTING_SHA"
-          else
-            gh api --method PUT repos/silee-tools/homebrew-tap/contents/Formula/bmm.rb \
-              -f message="bmm: update to ${TAG}" \
-              -f content="$ENCODED"
-          fi
+          cd homebrew-tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/bmm.rb
+          git commit -m "bmm: update to ${TAG}"
+          git push
