@@ -55,9 +55,7 @@ jobs:
           SHA_DARWIN_AMD64=$(sha256sum bmm-${TAG}-darwin-amd64.tar.gz | cut -d' ' -f1)
           SHA_LINUX_AMD64=$(sha256sum bmm-${TAG}-linux-amd64.tar.gz | cut -d' ' -f1)
 
-          git clone https://x-access-token:${GH_TOKEN}@github.com/silee-tools/homebrew-tap.git homebrew-tap
-
-          cat > homebrew-tap/Formula/bmm.rb << EOF
+          FORMULA_CONTENT=$(cat << RUBY
           class Bmm < Formula
             desc "A thin CLI wrapper around beautiful-mermaid for rendering Mermaid diagrams"
             homepage "https://github.com/silee-tools/beautiful-mermaid-cli"
@@ -90,13 +88,25 @@ jobs:
               assert_match "bmm", shell_output("#{bin}/bmm --help")
             end
           end
-          EOF
+          RUBY
+          )
 
-          sed -i 's/^          //' homebrew-tap/Formula/bmm.rb
+          # Strip leading whitespace from heredoc
+          FORMULA_CONTENT=$(echo "$FORMULA_CONTENT" | sed 's/^          //')
 
-          cd homebrew-tap
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/bmm.rb
-          git commit -m "bmm: update to ${TAG}"
-          git push
+          # Get existing file SHA (if exists) for update
+          EXISTING_SHA=$(gh api repos/silee-tools/homebrew-tap/contents/Formula/bmm.rb --jq '.sha' 2>/dev/null || echo "")
+
+          # Base64 encode content
+          ENCODED=$(echo "$FORMULA_CONTENT" | base64 -w 0)
+
+          if [ -n "$EXISTING_SHA" ]; then
+            gh api --method PUT repos/silee-tools/homebrew-tap/contents/Formula/bmm.rb \
+              -f message="bmm: update to ${TAG}" \
+              -f content="$ENCODED" \
+              -f sha="$EXISTING_SHA"
+          else
+            gh api --method PUT repos/silee-tools/homebrew-tap/contents/Formula/bmm.rb \
+              -f message="bmm: update to ${TAG}" \
+              -f content="$ENCODED"
+          fi
