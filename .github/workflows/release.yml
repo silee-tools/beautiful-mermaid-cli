@@ -1,0 +1,137 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            target: darwin-arm64
+          - os: macos-13
+            target: darwin-amd64
+          - os: ubuntu-latest
+            target: linux-amd64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: bun install --frozen-lockfile
+
+      - name: Build standalone binary
+        run: bun build src/cli.ts --compile --outfile bmm
+
+      - name: Create tarball
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          tar czf bmm-${TAG}-${{ matrix.target }}.tar.gz bmm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bmm-${{ matrix.target }}
+          path: bmm-*.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG" \
+            --generate-notes \
+            bmm-*.tar.gz
+
+  update-homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: silee-tools/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: homebrew-tap
+
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Update formula
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          VERSION=${TAG#v}
+
+          SHA_DARWIN_ARM64=$(shasum -a 256 bmm-${TAG}-darwin-arm64.tar.gz | cut -d' ' -f1)
+          SHA_DARWIN_AMD64=$(shasum -a 256 bmm-${TAG}-darwin-amd64.tar.gz | cut -d' ' -f1)
+          SHA_LINUX_AMD64=$(shasum -a 256 bmm-${TAG}-linux-amd64.tar.gz | cut -d' ' -f1)
+
+          cat > homebrew-tap/Formula/bmm.rb << FORMULA
+          class Bmm < Formula
+            desc "A thin CLI wrapper around beautiful-mermaid for rendering Mermaid diagrams"
+            homepage "https://github.com/silee-tools/beautiful-mermaid-cli"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              if Hardware::CPU.arm?
+                url "https://github.com/silee-tools/beautiful-mermaid-cli/releases/download/${TAG}/bmm-${TAG}-darwin-arm64.tar.gz"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              if Hardware::CPU.intel?
+                url "https://github.com/silee-tools/beautiful-mermaid-cli/releases/download/${TAG}/bmm-${TAG}-darwin-amd64.tar.gz"
+                sha256 "${SHA_DARWIN_AMD64}"
+              end
+            end
+
+            on_linux do
+              if Hardware::CPU.intel? && Hardware::CPU.is_64_bit?
+                url "https://github.com/silee-tools/beautiful-mermaid-cli/releases/download/${TAG}/bmm-${TAG}-linux-amd64.tar.gz"
+                sha256 "${SHA_LINUX_AMD64}"
+              end
+            end
+
+            def install
+              bin.install "bmm"
+            end
+
+            test do
+              assert_match "bmm", shell_output("#{bin}/bmm --help")
+            end
+          end
+          FORMULA
+
+          # Remove leading whitespace from heredoc
+          sed -i 's/^          //' homebrew-tap/Formula/bmm.rb
+
+      - name: Commit and push formula
+        working-directory: homebrew-tap
+        run: |
+          TAG=${GITHUB_REF#refs/tags/}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/bmm.rb
+          git commit -m "bmm: update to ${TAG}"
+          git push
