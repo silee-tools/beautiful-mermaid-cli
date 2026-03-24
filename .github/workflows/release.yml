@@ -51,16 +51,19 @@ jobs:
           TAG=${GITHUB_REF#refs/tags/}
           VERSION=${TAG#v}
 
-          SHA_DARWIN_ARM64=$(shasum -a 256 bmm-${TAG}-darwin-arm64.tar.gz | cut -d' ' -f1)
-          SHA_DARWIN_AMD64=$(shasum -a 256 bmm-${TAG}-darwin-amd64.tar.gz | cut -d' ' -f1)
-          SHA_LINUX_AMD64=$(shasum -a 256 bmm-${TAG}-linux-amd64.tar.gz | cut -d' ' -f1)
+          SHA_DARWIN_ARM64=$(sha256sum bmm-${TAG}-darwin-arm64.tar.gz | cut -d' ' -f1)
+          SHA_DARWIN_AMD64=$(sha256sum bmm-${TAG}-darwin-amd64.tar.gz | cut -d' ' -f1)
+          SHA_LINUX_AMD64=$(sha256sum bmm-${TAG}-linux-amd64.tar.gz | cut -d' ' -f1)
 
           git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/silee-tools/homebrew-tap.git homebrew-tap
 
-          cat > homebrew-tap/Formula/bmm.rb << EOF
+          cat > homebrew-tap/Formula/bmm.rb <<'FORMULA'
           class Bmm < Formula
             desc "A thin CLI wrapper around beautiful-mermaid for rendering Mermaid diagrams"
             homepage "https://github.com/silee-tools/beautiful-mermaid-cli"
+          FORMULA
+
+          cat >> homebrew-tap/Formula/bmm.rb << FORMULA
             version "${VERSION}"
             license "MIT"
 
@@ -90,9 +93,9 @@ jobs:
               assert_match "bmm", shell_output("#{bin}/bmm --help")
             end
           end
-          EOF
+          FORMULA
 
-          sed -i '' 's/^          //' homebrew-tap/Formula/bmm.rb
+          sed -i 's/^          //' homebrew-tap/Formula/bmm.rb
 
           cd homebrew-tap
           git config user.name "github-actions[bot]"
