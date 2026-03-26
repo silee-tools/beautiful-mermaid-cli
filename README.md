@@ -10,16 +10,35 @@ A thin CLI wrapper around beautiful-mermaid for rendering Mermaid diagrams as AS
 - Language: TypeScript
 - Core: [beautiful-mermaid](https://github.com/nicholasgasior/beautiful-mermaid)
 
+## Install
+
+```bash
+brew install silee-tools/tap/bmm
+```
+
 ## Getting Started
 
 ```bash
-# Install dependencies
-bun install
+# Render from stdin
+printf 'graph LR\n  A --> B\n  B --> C\n' | bmm
 
-# Run directly
-echo 'graph LR; A-->B-->C' | bun src/cli.ts
+# Render a file
+bmm diagram.mmd
 
-# Global install
-bun link
+# SVG output
+bmm --svg diagram.mmd
+
+# Pure ASCII (no Unicode box-drawing)
+bmm --ascii diagram.mmd
+
+# Show help with Mermaid syntax tips
 bmm --help
+```
+
+## Development
+
+```bash
+bun install
+printf 'graph LR\n  A --> B\n' | bun src/cli.ts
+bun link  # global install from source
 ```
