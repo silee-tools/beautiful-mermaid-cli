@@ -55,7 +55,12 @@ jobs:
           SHA_DARWIN_AMD64=$(sha256sum bmm-${TAG}-darwin-amd64.tar.gz | cut -d' ' -f1)
           SHA_LINUX_AMD64=$(sha256sum bmm-${TAG}-linux-amd64.tar.gz | cut -d' ' -f1)
 
-          git clone https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/silee-tools/homebrew-tap.git homebrew-tap
+          if [ -z "${HOMEBREW_TAP_TOKEN}" ]; then
+            echo "HOMEBREW_TAP_TOKEN is required to update the Homebrew tap" >&2
+            exit 1
+          fi
+
+          git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/silee-tools/homebrew-tap.git" homebrew-tap
 
           cat > homebrew-tap/Formula/bmm.rb <<'FORMULA'
           class Bmm < Formula
