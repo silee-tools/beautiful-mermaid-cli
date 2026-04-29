@@ -72,6 +72,42 @@ interface CliArgs {
   help: boolean;
 }
 
+const COLOR_MODES = new Set(["none", "ansi16", "ansi256", "truecolor", "auto"]);
+
+function readOptionValue(argv: string[], index: number, option: string): string {
+  const value = argv[index + 1];
+  if (value === undefined) {
+    console.error(`Error: ${option} requires a value.`);
+    process.exit(1);
+  }
+  if (value.startsWith("--")) {
+    console.error(`Error: ${option} requires a value.`);
+    process.exit(1);
+  }
+  return value;
+}
+
+function readNonNegativeNumber(argv: string[], index: number, option: string): number {
+  const value = readOptionValue(argv, index, option);
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    console.error(`Error: ${option} must be a non-negative number.`);
+    process.exit(1);
+  }
+  return parsed;
+}
+
+function readColorMode(argv: string[], index: number): string {
+  const value = readOptionValue(argv, index, "--color");
+  if (!COLOR_MODES.has(value)) {
+    console.error(
+      `Error: --color must be one of: ${Array.from(COLOR_MODES).join(", ")}.`
+    );
+    process.exit(1);
+  }
+  return value;
+}
+
 function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = {
     format: "ascii",
@@ -82,6 +118,7 @@ function parseArgs(argv: string[]): CliArgs {
   let i = 0;
   while (i < argv.length) {
     const arg = argv[i];
+    if (arg === undefined) break;
 
     switch (arg) {
       case "--help":
@@ -95,16 +132,20 @@ function parseArgs(argv: string[]): CliArgs {
         args.useAscii = true;
         break;
       case "--padding-x":
-        args.paddingX = Number(argv[++i]);
+        args.paddingX = readNonNegativeNumber(argv, i, "--padding-x");
+        i++;
         break;
       case "--padding-y":
-        args.paddingY = Number(argv[++i]);
+        args.paddingY = readNonNegativeNumber(argv, i, "--padding-y");
+        i++;
         break;
       case "--color":
-        args.colorMode = argv[++i];
+        args.colorMode = readColorMode(argv, i);
+        i++;
         break;
       case "--inline":
-        args.inline = argv[++i];
+        args.inline = readOptionValue(argv, i, "--inline");
+        i++;
         break;
       case "render":
         // render is the default subcommand, just skip it
@@ -124,7 +165,7 @@ function parseArgs(argv: string[]): CliArgs {
 }
 
 async function readInput(args: CliArgs): Promise<string> {
-  if (args.inline) return args.inline;
+  if (args.inline !== undefined) return args.inline;
 
   if (args.file) {
     return readFileSync(args.file, "utf-8");
